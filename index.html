@@ -1,0 +1,46 @@
+<!-- ============================= -->
+<!-- SECTION 1 (index.html): Head -->
+<!-- ============================= -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Keep Moving</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="main.js" defer></script>
+</head>
+
+<!-- ============================== -->
+<!-- SECTION 2 (index.html): Body  -->
+<!-- ============================== -->
+<body>
+<!-- HUD -->
+<div id="ageHud" style="margin-bottom:10px; font:600 16px/1.2 ui-sans-serif,system-ui; color:#ddd; display:none;">
+  Age: <span id="ageYears">0</span> years
+</div>
+
+<!-- Game area (hidden until Start) -->
+<div id="game" style="display:none;">
+  <div id="death" class="box">Death</div>
+  <div id="player" class="box">[Your Name]</div>
+  <div id="king" class="box">King</div>
+</div>
+
+<!-- Controls -->
+<div id="controls">
+  <p id="promptText">If you are ready, write your name and age, then start the game.</p>
+  <input type="text" id="nameInput" placeholder="Enter your name" />
+  <input type="number" id="ageInput" placeholder="Enter your age" min="1" max="120" style="width:140px;" />
+  <button id="startBtn">Start Game</button>
+</div>
+
+<!-- Game Over (reflection only — no input, no restart) -->
+<section id="gameOverCard" class="card card-gameover" style="display:none; margin-top:14px;">
+  <h2>Game Over</h2>
+  <p id="deathMessage"></p>
+  <p><em>What would you do if you had another try at life?</em></p>
+  <p class="tiny muted">There is no restart. You cannot restart life.</p>
+</section>
+</body>
+
