@@ -431,23 +431,18 @@ window.Difficulty = (function(){
     spawnMinSec: 6,
     spawnMaxSec: 10,
     speedPctPerSec: 14,
-    dragMult: 1.0,
+    dragMult: 0.5, // toned down
     style: { bg:'#777', border:'#aaa', scale:0.95 }
   };
 
   function phaseForAge(age){
-    if (age >= 40)   return 'senior';
-    if (age >= 16)   return 'adult';
+    if (age >= 55)   return 'senior';
+    if (age >= 20)   return 'adult';
     if (age >= 10)   return 'teen';
     return 'child';
   }
 
   function configForPhase(phase){
-    // You described:
-    // 1–9: slow life, rare small grey problems, slow clicks; unlikely to die
-    // 10–15: faster, yellow problems, you can move faster, more problems
-    // 16–39: full speed, fastest movement, more problems
-    // 40+: slower movement, red problems, stronger drag & more often
     switch(phase){
       case 'child':  return {
         driftMult: 0.55,
@@ -455,7 +450,7 @@ window.Difficulty = (function(){
         nudgeBack: 1.6,
         spawnMinSec: 8,  spawnMaxSec: 13,
         speedPctPerSec: 10,
-        dragMult: 0.6,
+        dragMult: 0.3, // reduced
         style: { bg:'#666', border:'#9aa', scale:0.9 }
       };
       case 'teen':   return {
@@ -464,8 +459,8 @@ window.Difficulty = (function(){
         nudgeBack: 2.4,
         spawnMinSec: 5,  spawnMaxSec: 9,
         speedPctPerSec: 13,
-        dragMult: 0.9,
-        style: { bg:'#c9a227', border:'#ffd76a', scale:1.0 } // yellow
+        dragMult: 0.6, // reduced
+        style: { bg:'#c9a227', border:'#ffd76a', scale:1.0 }
       };
       case 'adult':  return {
         driftMult: 1.0,
@@ -473,8 +468,8 @@ window.Difficulty = (function(){
         nudgeBack: 3.0,
         spawnMinSec: 3,  spawnMaxSec: 6,
         speedPctPerSec: 15,
-        dragMult: 1.1,
-        style: { bg:'#d4b43a', border:'#ffe083', scale:1.1 } // stronger yellow
+        dragMult: 0.8, // reduced
+        style: { bg:'#d4b43a', border:'#ffe083', scale:1.1 }
       };
       case 'senior': return {
         driftMult: 1.25,
@@ -482,8 +477,8 @@ window.Difficulty = (function(){
         nudgeBack: 2.4,
         spawnMinSec: 2,  spawnMaxSec: 4,
         speedPctPerSec: 16,
-        dragMult: 1.5,
-        style: { bg:'#b22222', border:'#ff9a9a', scale:1.2 } // red
+        dragMult: 1.0, // reduced
+        style: { bg:'#b22222', border:'#ff9a9a', scale:1.2 }
       };
     }
   }
@@ -492,7 +487,6 @@ window.Difficulty = (function(){
     const phase = phaseForAge(age);
     const cfg = configForPhase(phase);
     current = { ...cfg };
-    // Push into globals used by input
     NUDGE_FORWARD = cfg.nudgeForward;
     NUDGE_BACK    = cfg.nudgeBack;
   }
@@ -505,7 +499,6 @@ window.Difficulty = (function(){
     if (ageTimer){ clearInterval(ageTimer); ageTimer = null; }
   }
 
-  // Public getters used by other sections
   function getDriftMult(){ return current.driftMult; }
   function getProblemSpawn(){ return { spawnMinSec: current.spawnMinSec, spawnMaxSec: current.spawnMaxSec }; }
   function getProblemSpeedPct(){ return current.speedPctPerSec; }
@@ -523,6 +516,7 @@ window.Difficulty = (function(){
     getProblemStyle
   };
 })();
+
 // ======================================
 // SECTION 9 (main.js): Death Messaging
 // ======================================
@@ -543,4 +537,118 @@ function announceDeath(){
   // Lock controls after death
   disableControls();
 }
+// ===============================================
+// SECTION 10 (main.js): Difficulty Tuning Config
+// ===============================================
+// All knobs live here. Tweak freely.
+window.Tuning = {
+  // Make it easy to stay/return to the center (50%).
+  center: {
+    enabled: true,
+    centerPos: 50,     // where the "magnet" pulls you toward
+    k: 14              // pull strength (~% track per second at full distance); higher = stronger center pull
+  },
+
+  // Make it hard to reach/hold the King (right side).
+  kingWall: {
+    startAt: 72,       // resistance begins after this position (0..100)
+    curvePower: 2.1,   // how sharply resistance ramps up as you approach the king
+    maxMult: 6,        // max resistance multiplier near 100 (effective rightward progress = progress / multiplier)
+  },
+
+  // Extra leftward pull as you near the King (in addition to existing drift).
+  extraLeftPull: {
+    enabled: true,
+    rateAtEdge: 12     // additional % per second of left pull at 100; scales from startAt→100
+  }
+};
+// =======================================================
+// SECTION 11 (main.js): Movement & Loop Tuning Overlays
+// =======================================================
+(function TuningOverlays(){
+  if (!window.Tuning) return;
+
+  // -----------------------
+  // Helpers (pure functions)
+  // -----------------------
+  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+
+  function kingWallMultiplier(pos){
+    const cfg = Tuning.kingWall;
+    if (!cfg) return 1;
+    const start = cfg.startAt ?? 72;
+    if (pos <= start) return 1;
+    const t = clamp01((pos - start) / (100 - start));          // 0..1 across the final stretch
+    return 1 + (cfg.maxMult - 1) * Math.pow(t, cfg.curvePower); // grows toward maxMult near 100
+  }
+
+  // -----------------------
+  // Wrap nudgeRight to add resistance near the King
+  // -----------------------
+  const _nudgeRight = typeof nudgeRight === 'function' ? nudgeRight : null;
+  if (_nudgeRight){
+    window.nudgeRight = function(){
+      if (!running || GameState.dead) return;
+      const before = GameState.playerPos;
+      _nudgeRight(); // perform the normal step
+      const after = GameState.playerPos;
+
+      // If we actually moved right, apply the resistance
+      const delta = after - before;
+      if (delta > 0){
+        const mult = kingWallMultiplier(before); // resistance based on where you STARTED the push
+        const effective = delta / (mult > 0 ? mult : 1);
+        GameState.playerPos = before + effective;
+        GameState.playerPos = Math.max(TRACK_MIN, Math.min(TRACK_MAX, GameState.playerPos));
+        playerBox.style.left = `${GameState.playerPos}%`;
+      }
+    };
+  }
+
+  // -----------------------
+  // Wrap tick to add center magnet + extra left pull near King
+  // -----------------------
+  const _tick = typeof tick === 'function' ? tick : null;
+  if (_tick){
+    let lastTuneTs = performance.now();
+
+    window.tick = function(now){
+      // Run the original loop first (drift, rendering, collisions, problems)
+      _tick(now);
+
+      if (!running || GameState.dead) { lastTuneTs = now; return; }
+
+      const dt = Math.max(0, (now - lastTuneTs) / 1000);
+      lastTuneTs = now;
+
+      // 1) Center magnet — gentle pull toward centerPos
+      const c = Tuning.center;
+      if (c && c.enabled){
+        const diff = (c.centerPos ?? 50) - GameState.playerPos; // positive if left of center, negative if right
+        // Translate "k" (approx %/sec at full distance) into a frame adjustment
+        const adjust = (c.k / 100) * diff * dt;
+        GameState.playerPos += adjust;
+      }
+
+      // 2) Extra left pull near the King — scales from startAt → 100
+      const ep = Tuning.extraLeftPull;
+      const wall = Tuning.kingWall || { startAt: 72 };
+      if (ep && ep.enabled){
+        const start = wall.startAt ?? 72;
+        if (GameState.playerPos > start){
+          const t = clamp01((GameState.playerPos - start) / (100 - start)); // 0..1
+          const pullPerSec = (ep.rateAtEdge ?? 12) * t; // %/sec
+          GameState.playerPos -= pullPerSec * dt;
+        }
+      }
+
+      // Clamp + reflect on screen + re-check collisions after tuning
+      GameState.playerPos = Math.max(TRACK_MIN, Math.min(TRACK_MAX, GameState.playerPos));
+      playerBox.style.left = `${GameState.playerPos}%`;
+
+      // Collisions may become true after adjustments (e.g., pulled into Death)
+      detectAndApplyCollisions();
+    };
+  }
+})();
 
