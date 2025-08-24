@@ -6,7 +6,7 @@
 A small browser-only game about momentum and choices.  
 No backend, no tracking. Just HTML + CSS + JavaScript.
 
-> **Note:** This game was made completely with ChatGPT-5.
+> **Note:** This game was made completely with ChatGPT-5 by Janis Paegle
 
 ---
 
