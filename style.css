@@ -105,3 +105,24 @@ body {
   color: #888;
   margin-top: 8px;
 }
+/* ========================================= */
+/* SECTION 5 (style.css): Disclaimer         */
+/* ========================================= */
+.disclaimer {
+  max-width: 720px;
+  margin: 20px auto 30px auto;
+  padding: 18px 22px;
+  background: linear-gradient(180deg, #0f172a, #1e293b);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.35);
+  font-size: 15px;
+  line-height: 1.6;
+  color: #ddd;
+  text-align: left;
+}
+
+.disclaimer strong {
+  color: #fff;
+  font-weight: 700;
+}

@@ -552,68 +552,63 @@ function announceDeath(){
   const reached = GameState.reachedKing;
   const age = GameState.ageYears;
 
-  // Decide which zone player spent most time in (from LifeSpan time tracking)
-  // Here we just use LifeSpan.debug() which has tGood/tBad, but extend later if you add per-zone tracking.
-  let narrative = "";
+  // Pick narrative
+  let narrative = '';
 
-  if (reached) {
+  if (reached){
     // 👑 Crown narrative (inspirational)
     narrative =
-      "You risked it all. You pushed harder than most — physically, mentally, relentlessly. " +
+      "<p>You risked it all. You pushed harder than most — physically, mentally, relentlessly. " +
       "Against the drag of time and the weight of problems, you reached the crown. " +
       "That choice set you apart: instead of drifting with the current, you aimed for more. " +
       "The crown gave you wealth, stability, and the means to provide the best healthcare for yourself and your family. " +
       "But more than that, it proved that striving changes everything — even though life still ends, the journey becomes extraordinary. " +
-      "To live fully, you chose to go all in.";
+      "To live fully, you chose to go all in.</p>";
   } else {
-    // Pick narrative by majority zone lived in
-    const dbg = LifeSpan.debug();
-    const goodRatio = dbg.goodRatio;
+    // Zone‑based narrative — "low‑effort" ONLY if life was mostly in the danger band
+    const dom = LifeSpan.dominantZone ? LifeSpan.dominantZone() : { zone:'stable', share:1 };
+    const z = dom.zone;
 
-    // Quick proxy for “majority zone”
-    // If >0.7 good ratio = Stable/Climb/Throne zones; <0.3 = Danger/Effort zones
-    if (goodRatio < 0.2) {
+    if (z === 'danger'){
       narrative =
-        "You spent most of your life in the danger band — struggling to survive day to day. " +
-        "You lived with constant risk, little stability, and no safety net. Life expectancy was short, and death came early.";
-    } else if (goodRatio < 0.45) {
+        "<p>You spent most of your life in the danger band — right on the edge of survival. " +
+        "Resources and safety nets were scarce. In places like this, life expectancy is shorter, and yours followed that pattern.</p>";
+    } else if (z === 'effort'){
       narrative =
-        "You spent most of your life in the low-effort, low-success zone. " +
-        "Resources were limited — healthcare, education, food quality all below average. " +
-        "Statistically, lives here end sooner, and yours was no exception.";
-    } else if (goodRatio < 0.65) {
+        "<p>You lived much of your life in the effort zone — not near collapse, but rarely comfortable. " +
+        "Progress required constant work and trade‑offs, and limited access to opportunity kept your years closer to average.</p>";
+    } else if (z === 'stable'){
       narrative =
-        "You lived most of your life in the balanced middle. " +
-        "Not without struggles, but with stability and access to opportunities. " +
-        "Your lifespan matched the average, reflecting both the good and the bad.";
-    } else if (goodRatio < 0.85) {
+        "<p>You lived most of your life in the balanced middle. " +
+        "Not without struggle, but with stability and access to opportunities. Your lifespan reflected that balance.</p>";
+    } else if (z === 'climb'){
       narrative =
-        "You spent most of your life striving above the norm. " +
-        "Harder challenges came with greater risk, but also better rewards. " +
-        "Your determination granted you longer years than most, though it came with constant effort.";
-    } else {
+        "<p>You spent much of your life climbing above the norm. " +
+        "Greater challenges came with greater rewards, and your persistence extended your years beyond most.</p>";
+    } else { // 'throne'
       narrative =
-        "You lived close to the King. Few reach this level — with privilege, power, or mastery. " +
-        "Your life expectancy was extended beyond average, but still bounded by mortality. " +
-        "Even kings fall before 122 years.";
+        "<p>You lived close to the crown — rare air. " +
+        "Privilege, power, or mastery brought stability and options, lengthening life, though never beyond the human limit.</p>";
     }
   }
 
-  // Compose base message
+  // Base line
   const msg = `You died at age ${age} ${reached ? "and you reached the king." : "and you did not reach the king."}`;
 
-  // Reveal the Game Over card and fill text
+  // Render into the Game Over card
   const card = document.getElementById('gameOverCard');
   const deathMsgEl = document.getElementById('deathMessage');
   if (card && deathMsgEl){
-    deathMsgEl.innerHTML = `<p>${msg}</p><p>${narrative}</p>`;
+    // Split into neat paragraphs
+    deathMsgEl.innerHTML = `<p>${msg}</p>${narrative}`;
     card.style.display = 'block';
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
-  // Lock controls after death
+  // Lock input
   disableControls();
 }
+
 
 // ===============================================
 // SECTION 10 (main.js): Difficulty Tuning Config
@@ -731,81 +726,106 @@ window.Tuning = {
 })();
 
 // ==================================================
-// SECTION 12 (main.js): Lifespan & Death Expectancy
+// SECTION 12 (main.js): Lifespan & Time-in-Zone Stats
 // ==================================================
-// Goal:
-// - You die at the *current average age of death* (tunable).
-// - If you spent more time in the "good" part of life (>= MIDLINE),
-//   your lifespan is longer; if you spent it in the "bad" part (< MIDLINE),
-//   it is shorter.
-// - Reaching the King grants a bonus, but MAX is capped at 122.
-//
-// This section is engine-agnostic. Call LifeSpan.onTick(dt, state) once per frame
-// and use LifeSpan.shouldDie(state) to know when to end the run.
+// Tracks time spent in each zone (danger/effort/stable/climb/throne)
+// and computes a capped life expectancy (max 122).
+// Other sections (tick, death messaging) can query dominantZone().
 
 window.LifeSpan = (function(){
   // Tunables
-  const MIDLINE = 50;          // progress >= MIDLINE counts as "good life"
-  const BASE_LIFE = 75;        // "current average age of death" (years) — adjust if needed
-  const MAX_LIFE  = 122;       // Jeanne Calment cap
+  const BASE_LIFE = 75;        // average life expectancy
+  const MAX_LIFE  = 122;       // hard cap
   const MIN_LIFE  = 40;        // sanity floor
-  const KING_BONUS_YEARS = 7;  // bonus for reaching the King (capped by MAX_LIFE)
+  const KING_BONUS_YEARS = 7;  // crown extends expectancy (still capped)
 
-  // Impact of life-balance on expectancy (years)
-  const GOOD_MAX_BONUS = 10;   // if you lived mostly >= MIDLINE
-  const BAD_MAX_PENALTY = -10; // if you lived mostly < MIDLINE
+  // Lifestyle adjustment bounds (years)
+  const GOOD_MAX_BONUS   = 10;   // mostly above middle (stable/climb/throne)
+  const BAD_MAX_PENALTY  = -10;  // mostly below middle
 
-  // Internal accumulators (seconds)
-  let tGood = 0;
-  let tBad  = 0;
+  // Zone time accumulators (seconds)
+  const timeIn = {
+    danger: 0,   // 0–10
+    effort: 0,   // 10–40
+    stable: 0,   // 40–60
+    climb: 0,    // 60–80
+    throne: 0    // 80–100
+  };
 
-  // Utility
-  const clamp = (v,a,b)=> Math.max(a, Math.min(b, v));
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 
-  // Compute years delta from good:bad ratio
+  function zoneFor(pos){
+    // Use Zones if present; otherwise approximate with fixed cutoffs
+    const p = clamp(pos ?? 50, 0, 100);
+    if (window.Zones && Zones.zoneForPos) return Zones.zoneForPos(p);
+    if (p < 10) return 'danger';
+    if (p < 40) return 'effort';
+    if (p < 60) return 'stable';
+    if (p < 80) return 'climb';
+    return 'throne';
+  }
+
+  function onTick(dtSeconds, state){
+    const dt = Math.max(0, dtSeconds || 0);
+    const z = zoneFor(state?.progress);
+    if (timeIn[z] !== undefined) timeIn[z] += dt;
+  }
+
+  function totals(){
+    const total =
+      timeIn.danger + timeIn.effort + timeIn.stable +
+      timeIn.climb  + timeIn.throne;
+    return { total, ...timeIn };
+  }
+
+  function dominantZone(){
+    let best = 'stable', bestVal = -1;
+    for (const k of ['danger','effort','stable','climb','throne']){
+      if (timeIn[k] > bestVal){ best = k; bestVal = timeIn[k]; }
+    }
+    const t = totals().total || 1;
+    return { zone: best, share: bestVal / t, timeIn: { ...timeIn }, total: t };
+  }
+
   function balanceDeltaYears(){
-    const total = tGood + tBad;
-    if (total <= 0) return 0;
-    const goodRatio = tGood / total;      // 0..1
-    // Map 0..1 => [-BAD_MAX, +GOOD_MAX]
+    // Map “mostly above/below mid” to a ± years adjustment.
+    // Aggregate: treat stable+climb+throne as "good", danger+effort as "bad".
+    const t = totals();
+    const total = t.total || 1;
+    const good = t.stable + t.climb + t.throne;
+    const goodRatio = good / total;
     return BAD_MAX_PENALTY + (GOOD_MAX_BONUS - BAD_MAX_PENALTY) * goodRatio;
   }
 
   function expectedDeathAge(state){
-    // Base + lifestyle + (king bonus if reached)
     const lifeDelta = balanceDeltaYears();
     const kingBonus = state?.reachedKing ? KING_BONUS_YEARS : 0;
     const exp = BASE_LIFE + lifeDelta + kingBonus;
     return clamp(exp, MIN_LIFE, MAX_LIFE);
   }
 
-  return {
-    // Call every frame/tick with dtSeconds and a state that includes progress (0..100)
-    onTick(dtSeconds, state){
-      const p = (state?.progress ?? 50);
-      if (p >= MIDLINE) tGood += Math.max(0, dtSeconds || 0);
-      else              tBad  += Math.max(0, dtSeconds || 0);
-    },
+  function shouldDie(state){
+    const ageYears = state?.ageYears ?? state?.age ?? 0;
+    const exp = expectedDeathAge({ reachedKing: !!state?.reachedKing });
+    return ageYears >= exp;
+  }
 
-    // Query the current expected lifespan in years
-    getExpected(){ return { base: BASE_LIFE, expected: expectedDeathAge({ reachedKing:false }), max: MAX_LIFE }; },
+  function debug(){
+    const t = totals();
+    const dom = dominantZone();
+    const good = t.stable + t.climb + t.throne;
+    return {
+      timeIn: { ...t },
+      dominant: dom.zone,
+      dominantShare: dom.share,
+      goodRatio: (t.total ? good / t.total : 0),
+      expectedNow: expectedDeathAge({ reachedKing:false })
+    };
+  }
 
-    // Should the run end due to age?
-    shouldDie(state){
-      const ageYears = state?.ageYears ?? state?.age ?? 0;
-      const reachedKing = !!state?.reachedKing;
-      const exp = expectedDeathAge({ reachedKing });
-      return ageYears >= exp;
-    },
-
-    // For UI/debug (optional)
-    debug(){
-      const total = tGood + tBad;
-      const goodRatio = total>0 ? (tGood/total) : 0.5;
-      return { tGood, tBad, goodRatio, GOOD_MAX_BONUS, BAD_MAX_PENALTY };
-    }
-  };
+  return { onTick, shouldDie, dominantZone, debug, expectedDeathAge };
 })();
+
 // ========================================================
 // SECTION 13 (main.js): Problem Push Guards (no killing)
 // ========================================================
