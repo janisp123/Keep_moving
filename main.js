@@ -129,10 +129,10 @@ function disableControls(){
 
 function handleKeydown(e){
   const code = e.code;
-  if (code === 'ArrowRight' || code === 'Space' || code === 'KeyD') {
+  if ((code === 'ArrowRight' || code === 'Space' || code === 'KeyD') && !e.repeat) {
     e.preventDefault();
     nudgeRight();
-  } else if (code === 'ArrowLeft' || code === 'KeyA') {
+  } else if ((code === 'ArrowLeft' || code === 'KeyA') && !e.repeat) {
     e.preventDefault();
     nudgeLeft();
   }
