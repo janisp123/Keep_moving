@@ -21,6 +21,42 @@
   <p>Pushing <strong>D</strong> on your keyboard represents the effort you’re willing to put in.</p>
   <p>You cannot control age — time moves on regardless. Difficulty changes with age: some seasons bring health and fewer problems; later seasons bring more problems and less strength.</p>
   <p>The more consistent your effort, the more likely you are to rise above the middle — with better stability, options, and care. If you stop moving, you slide toward the bottom. Even if you push hard, everyone dies; the journey changes, not the ending.</p>
+
+  <!-- ✅ New prime-age warning, highlighted -->
+  <p class="highlight-warn">
+    When you are in your prime (20–50) it’s the best time to climb the success ladder.
+    If you miss that period or start close to the end of your prime,
+    you need to face a harsh truth — it will not be easy, and you will feel it in the game, it will become harder.
+    So do not waste your time!
+  </p>
+
+
+</div>
+
+
+<!-- Life Track (visual zones) -->
+<section class="lifeTrack">
+  <div class="zones">
+    <div class="zone red"    aria-label="Near Bottom"></div>
+    <div class="zone yellow" aria-label="Below Middle"></div>
+    <div class="zone green"  aria-label="Middle"></div>
+    <div class="zone silver" aria-label="Above Middle"></div>
+    <div class="zone gold"   aria-label="King"></div>
+    <div id="lifeMarker" class="marker" style="left: 50%"></div>
+  </div>
+  <div class="legend">
+    <span><span class="dot red"></span> Near Bottom</span>
+    <span><span class="dot yellow"></span> Below Middle</span>
+    <span><span class="dot green"></span> Middle</span>
+    <span><span class="dot silver"></span> Above Middle</span>
+    <span><span class="dot gold"></span> King</span>
+  </div>
+</section>
+
+<!-- Zone Buff (changes with zone) -->
+<div id="zoneBuff" class="zone-buff zone-green">
+  <span class="light"></span>
+  <span id="zoneBuffText">Middle — stable footing.</span>
 </div>
 
 <!-- HUD -->

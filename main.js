@@ -18,33 +18,39 @@ startBtn.addEventListener('click', () => {
   if (!Number.isFinite(startAge)) startAge = 10;
   startAge = Math.max(1, Math.min(120, startAge));
 
-  playerBox.textContent = name;
+  // Reveal UI that may have been hidden after death
+  const show = (sel, style='block') => { const el = document.querySelector(sel); if (el) el.style.display = style; };
+  show('.lifeTrack');          // life line
+  show('#zoneBuff', 'flex');   // zone badge
+  show('#game');               // boxes area
+  show('#ageHud');             // age HUD
 
-  // Reveal HUD + game
-  if (ageHud && ageHud.style.display === 'none') ageHud.style.display = 'block';
-  const gameEl = document.getElementById('game');
-  if (gameEl && gameEl.style.display === 'none') gameEl.style.display = 'block';
+  // Hide previous result & disclaimer (fresh run)
+  const hide = (sel) => { const el = document.querySelector(sel); if (el) el.style.display = 'none'; };
+  hide('#gameOverCard');
+  hide('#disclaimer');
 
-  // Hide pre-game UI
+  // Pre-game controls → off
   const controlsEl = document.getElementById('controls');
   if (controlsEl) controlsEl.style.display = 'none';
 
-  // Reset and start
+  // Set name + reset state
+  playerBox.textContent = name;
   GameState.reset(name);
   GameState.ageYears = startAge;
   ageYearsEl.textContent = String(GameState.ageYears);
 
-  // Initialize difficulty based on age
+  // Difficulty from age
   Difficulty.applyForAge(GameState.ageYears);
 
-  // Start timers + loop
+  // Age timer (1 sec = +1 year)
   Difficulty.startAgeTimer(() => {
-    // Each second = +1 year
     GameState.ageYears += 1;
     ageYearsEl.textContent = String(GameState.ageYears);
     Difficulty.applyForAge(GameState.ageYears);
   });
 
+  // Go
   startLoop();
   enableControls(); // enable movement keys only now
 });
@@ -549,6 +555,13 @@ window.Difficulty = (function(){
 // SECTION 9 (main.js): Death Messaging
 // ======================================
 function announceDeath(){
+  // Hide the moving parts so only the result remains
+  const hide = (sel) => { const el = document.querySelector(sel); if (el) el.style.display = 'none'; };
+  hide('.lifeTrack');   // the colored life line
+  hide('#zoneBuff');    // the zone badge
+  hide('#game');        // the boxes area
+  hide('#ageHud');      // the age HUD
+
   const reached = GameState.reachedKing;
   const age = GameState.ageYears;
 
@@ -599,15 +612,15 @@ function announceDeath(){
   const card = document.getElementById('gameOverCard');
   const deathMsgEl = document.getElementById('deathMessage');
   if (card && deathMsgEl){
-    // Split into neat paragraphs
     deathMsgEl.innerHTML = `<p>${msg}</p>${narrative}`;
     card.style.display = 'block';
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
-  // Lock input
+  // Lock input (belt & suspenders)
   disableControls();
 }
+
 
 
 // ===============================================
@@ -871,13 +884,13 @@ window.ProblemGuards = (function(){
 // This section adjusts drift and problem effects depending on zone.
 
 window.Zones = (function(){
-  const Z = {
-    danger: { min: 0, max: 10 },
-    effort: { min: 10, max: 40 },
-    stable: { min: 40, max: 60 },
-    climb:  { min: 60, max: 80 },
-    throne: { min: 80, max: 100 }
-  };
+const Z = {
+  danger: { min: 0, max: 30 },   // 🔴 widened
+  effort: { min: 30, max: 40 },
+  stable: { min: 40, max: 60 },
+  climb:  { min: 60, max: 80 },
+  throne: { min: 80, max: 100 }
+};
 
   // Drift multipliers (relative to Difficulty baseline)
   const DRIFT_MULTS = {
@@ -918,6 +931,35 @@ window.Zones = (function(){
 
   return { zoneForPos, driftMult, problemFactor };
 })();
+// ======================================================
+// SECTION 14-B (main.js): Zone Metadata (Messages + Colors)
+// ======================================================
+// Central place for HUD messages + colors, keyed by zone name.
+// HUD and other systems should use this instead of hardcoding.
+
+window.ZoneMeta = {
+  danger: {
+    msg: "Near bottom — life is hard; resources are thin.",
+    color: "#ef4444"
+  },
+  effort: {
+    msg: "Below middle — limited options; keep moving.",
+    color: "#eab308"
+  },
+  stable: {
+    msg: "Middle — stable footing.",
+    color: "#22c55e"
+  },
+  climb: {
+    msg: "Above middle — challenges ease with stability and wealth.",
+    color: "#c0c6d1"
+  },
+  throne: {
+    msg: "Crown — leverage makes problems lighter.",
+    color: "#d97706"
+  }
+};
+
 // ========================================================
 // SECTION 15 (main.js): King Buffs (easier life after crown)
 // ========================================================
@@ -982,4 +1024,39 @@ window.Zones = (function(){
       }
     }
   };
+})();
+// ======================================================
+// SECTION 16 (main.js): Zone Buff HUD (auto-updates)
+// ======================================================
+// Simplified: always read GameState.playerPos (0..100).
+// Zones.zoneForPos + ZoneMeta ensure consistency.
+
+(function ZoneBuffHUD(){
+  const el  = document.getElementById('zoneBuff');
+  const txt = document.getElementById('zoneBuffText');
+  if (!el || !txt) return;
+
+  let lastZone = '';
+
+  function apply(zoneKey, percent){
+    const meta = (window.ZoneMeta && window.ZoneMeta[zoneKey]) || {};
+    el.className = 'zone-buff zone-' + zoneKey;
+    el.style.boxShadow = `0 0 18px ${meta.color || '#888'}33, inset 0 0 0 2px ${meta.color || '#888'}55`;
+    el.style.borderColor = `${meta.color || '#888'}66`;
+    txt.textContent = meta.msg || zoneKey;
+    el.title = `pos: ${percent.toFixed(1)}% • zone: ${zoneKey}`;
+    lastZone = zoneKey;
+  }
+
+  function tick(){
+    const pos = (typeof GameState !== 'undefined' && typeof GameState.playerPos === 'number')
+      ? GameState.playerPos
+      : 50;
+    const zone = Zones.zoneForPos(pos);
+    if (zone !== lastZone) apply(zone, pos);
+  }
+
+  // Initial + poll
+  tick();
+  setInterval(tick, 200);
 })();
