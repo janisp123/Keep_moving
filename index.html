@@ -35,10 +35,10 @@
   <button id="startBtn">Start Game</button>
 </div>
 
-<!-- Game Over (reflection only — no input, no restart) -->
-<section id="gameOverCard" class="card card-gameover" style="display:none; margin-top:14px;">
+<!-- Game Over (hidden until death) -->
+<section id="gameOverCard" class="gameover-card" style="display:none;">
   <h2>Game Over</h2>
-  <p id="deathMessage"></p>
+  <div id="deathMessage" class="deathMessage"></div>
   <p><em>What would you do if you had another try at life?</em></p>
   <p class="tiny muted">There is no restart. You cannot restart life.</p>
 </section>

@@ -66,3 +66,42 @@ body {
   display: flex;
   gap: 10px;
 }
+/* ========================================= */
+/* SECTION 4 (style.css): Game Over Card     */
+/* ========================================= */
+.gameover-card {
+  max-width: 720px;
+  margin: 40px auto;
+  padding: 24px 28px;
+  background: linear-gradient(180deg, #111827, #1a1a1a);
+  border: 2px solid #444;
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+  text-align: left;
+}
+
+.gameover-card h2 {
+  font-size: 22px;
+  margin-bottom: 14px;
+  font-weight: 700;
+}
+
+.deathMessage {
+  font-size: 15px;
+  line-height: 1.6;
+  margin-bottom: 16px;
+  white-space: pre-line; /* keeps line breaks from JS */
+}
+
+.gameover-card em {
+  display: block;
+  margin-top: 14px;
+  font-size: 14px;
+  color: #bbb;
+}
+
+.tiny.muted {
+  font-size: 12px;
+  color: #888;
+  margin-top: 8px;
+}

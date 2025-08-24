@@ -166,6 +166,18 @@ function tick(now){
   const drift = (GameState.reachedKing ? DRIFT_BASE / 2 : DRIFT_BASE) * ageDriftMult;
   GameState.playerPos = Math.max(TRACK_MIN, Math.min(TRACK_MAX, GameState.playerPos - drift * dt));
 
+  // Update lifespan tracker
+  if (window.LifeSpan) {
+    LifeSpan.onTick(dt, { progress: GameState.playerPos, reachedKing: GameState.reachedKing });
+    if (LifeSpan.shouldDie(GameState)) {
+      GameState.dead = true;
+      stopLoop();
+      playerBox.textContent = `${GameState.playerName} ☠`;
+      announceDeath();
+      return; // stop loop immediately
+    }
+  }
+
   render();
   detectAndApplyCollisions(); // collisions based on actual box overlap
 
@@ -291,7 +303,14 @@ function detectAndApplyCollisions(){
 // ======================================
 // SECTION 7-3 (main.js): Updating & Effects
 // ======================================
+  // Invisible wall + safety band
+  const PROBLEM_PUSH_FLOOR = 45; // problems can NEVER push you below this %
+  const DANGER_BAND       = 12; // near death: problems pause and add no extra pull
+
   function extraDriftIfPushing(dtSeconds){
+    // If we’re in the safety band or already below the floor, problems stop adding pull
+    if (GameState.playerPos <= DANGER_BAND || GameState.playerPos <= PROBLEM_PUSH_FLOOR) return 0;
+
     const anyPushing = problems.some(p => p.pushing && !p.cleared);
     if (!anyPushing) return 0;
 
@@ -342,13 +361,22 @@ function detectAndApplyCollisions(){
       p.el.style.boxShadow = p.pushing ? '0 0 16px rgba(255,208,138,0.45)' : 'none';
     }
 
-    // Extra drift while any problem is pushing
+    // Extra drift while any problem is pushing — but respect the invisible wall & danger band
     const extra = extraDriftIfPushing(dt);
     if (extra > 0 && running && !GameState.dead){
-      GameState.playerPos = Math.max(TRACK_MIN, GameState.playerPos - extra);
-      playerBox.style.left = `${GameState.playerPos}%`;
+      const before = GameState.playerPos;
+      let after = before - extra;
 
-      // Death check
+      // Invisible wall: problems cannot push you below PROBLEM_PUSH_FLOOR
+      if (after < PROBLEM_PUSH_FLOOR) after = PROBLEM_PUSH_FLOOR;
+
+      // Apply only if it actually moves us (and we’re not in the danger band)
+      if (before > DANGER_BAND) {
+        GameState.playerPos = Math.max(TRACK_MIN, after);
+        playerBox.style.left = `${GameState.playerPos}%`;
+      }
+
+      // Death check still depends ONLY on normal drift/collisions; problems no longer finish you off
       const d = rect(deathBox);
       const pr = rect(playerBox);
       if (overlapsHoriz(pr, d)){
@@ -521,15 +549,64 @@ window.Difficulty = (function(){
 // SECTION 9 (main.js): Death Messaging
 // ======================================
 function announceDeath(){
-  // Compose message
-  const reached = GameState.reachedKing ? 'and you reached the king.' : 'and you did not reach the king.';
-  const msg = `You died at age ${GameState.ageYears} ${reached}`;
+  const reached = GameState.reachedKing;
+  const age = GameState.ageYears;
+
+  // Decide which zone player spent most time in (from LifeSpan time tracking)
+  // Here we just use LifeSpan.debug() which has tGood/tBad, but extend later if you add per-zone tracking.
+  let narrative = "";
+
+  if (reached) {
+    // 👑 Crown narrative (inspirational)
+    narrative =
+      "You risked it all. You pushed harder than most — physically, mentally, relentlessly. " +
+      "Against the drag of time and the weight of problems, you reached the crown. " +
+      "That choice set you apart: instead of drifting with the current, you aimed for more. " +
+      "The crown gave you wealth, stability, and the means to provide the best healthcare for yourself and your family. " +
+      "But more than that, it proved that striving changes everything — even though life still ends, the journey becomes extraordinary. " +
+      "To live fully, you chose to go all in.";
+  } else {
+    // Pick narrative by majority zone lived in
+    const dbg = LifeSpan.debug();
+    const goodRatio = dbg.goodRatio;
+
+    // Quick proxy for “majority zone”
+    // If >0.7 good ratio = Stable/Climb/Throne zones; <0.3 = Danger/Effort zones
+    if (goodRatio < 0.2) {
+      narrative =
+        "You spent most of your life in the danger band — struggling to survive day to day. " +
+        "You lived with constant risk, little stability, and no safety net. Life expectancy was short, and death came early.";
+    } else if (goodRatio < 0.45) {
+      narrative =
+        "You spent most of your life in the low-effort, low-success zone. " +
+        "Resources were limited — healthcare, education, food quality all below average. " +
+        "Statistically, lives here end sooner, and yours was no exception.";
+    } else if (goodRatio < 0.65) {
+      narrative =
+        "You lived most of your life in the balanced middle. " +
+        "Not without struggles, but with stability and access to opportunities. " +
+        "Your lifespan matched the average, reflecting both the good and the bad.";
+    } else if (goodRatio < 0.85) {
+      narrative =
+        "You spent most of your life striving above the norm. " +
+        "Harder challenges came with greater risk, but also better rewards. " +
+        "Your determination granted you longer years than most, though it came with constant effort.";
+    } else {
+      narrative =
+        "You lived close to the King. Few reach this level — with privilege, power, or mastery. " +
+        "Your life expectancy was extended beyond average, but still bounded by mortality. " +
+        "Even kings fall before 122 years.";
+    }
+  }
+
+  // Compose base message
+  const msg = `You died at age ${age} ${reached ? "and you reached the king." : "and you did not reach the king."}`;
 
   // Reveal the Game Over card and fill text
   const card = document.getElementById('gameOverCard');
   const deathMsgEl = document.getElementById('deathMessage');
   if (card && deathMsgEl){
-    deathMsgEl.textContent = msg;
+    deathMsgEl.innerHTML = `<p>${msg}</p><p>${narrative}</p>`;
     card.style.display = 'block';
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
@@ -537,6 +614,7 @@ function announceDeath(){
   // Lock controls after death
   disableControls();
 }
+
 // ===============================================
 // SECTION 10 (main.js): Difficulty Tuning Config
 // ===============================================
@@ -652,3 +730,236 @@ window.Tuning = {
   }
 })();
 
+// ==================================================
+// SECTION 12 (main.js): Lifespan & Death Expectancy
+// ==================================================
+// Goal:
+// - You die at the *current average age of death* (tunable).
+// - If you spent more time in the "good" part of life (>= MIDLINE),
+//   your lifespan is longer; if you spent it in the "bad" part (< MIDLINE),
+//   it is shorter.
+// - Reaching the King grants a bonus, but MAX is capped at 122.
+//
+// This section is engine-agnostic. Call LifeSpan.onTick(dt, state) once per frame
+// and use LifeSpan.shouldDie(state) to know when to end the run.
+
+window.LifeSpan = (function(){
+  // Tunables
+  const MIDLINE = 50;          // progress >= MIDLINE counts as "good life"
+  const BASE_LIFE = 75;        // "current average age of death" (years) — adjust if needed
+  const MAX_LIFE  = 122;       // Jeanne Calment cap
+  const MIN_LIFE  = 40;        // sanity floor
+  const KING_BONUS_YEARS = 7;  // bonus for reaching the King (capped by MAX_LIFE)
+
+  // Impact of life-balance on expectancy (years)
+  const GOOD_MAX_BONUS = 10;   // if you lived mostly >= MIDLINE
+  const BAD_MAX_PENALTY = -10; // if you lived mostly < MIDLINE
+
+  // Internal accumulators (seconds)
+  let tGood = 0;
+  let tBad  = 0;
+
+  // Utility
+  const clamp = (v,a,b)=> Math.max(a, Math.min(b, v));
+
+  // Compute years delta from good:bad ratio
+  function balanceDeltaYears(){
+    const total = tGood + tBad;
+    if (total <= 0) return 0;
+    const goodRatio = tGood / total;      // 0..1
+    // Map 0..1 => [-BAD_MAX, +GOOD_MAX]
+    return BAD_MAX_PENALTY + (GOOD_MAX_BONUS - BAD_MAX_PENALTY) * goodRatio;
+  }
+
+  function expectedDeathAge(state){
+    // Base + lifestyle + (king bonus if reached)
+    const lifeDelta = balanceDeltaYears();
+    const kingBonus = state?.reachedKing ? KING_BONUS_YEARS : 0;
+    const exp = BASE_LIFE + lifeDelta + kingBonus;
+    return clamp(exp, MIN_LIFE, MAX_LIFE);
+  }
+
+  return {
+    // Call every frame/tick with dtSeconds and a state that includes progress (0..100)
+    onTick(dtSeconds, state){
+      const p = (state?.progress ?? 50);
+      if (p >= MIDLINE) tGood += Math.max(0, dtSeconds || 0);
+      else              tBad  += Math.max(0, dtSeconds || 0);
+    },
+
+    // Query the current expected lifespan in years
+    getExpected(){ return { base: BASE_LIFE, expected: expectedDeathAge({ reachedKing:false }), max: MAX_LIFE }; },
+
+    // Should the run end due to age?
+    shouldDie(state){
+      const ageYears = state?.ageYears ?? state?.age ?? 0;
+      const reachedKing = !!state?.reachedKing;
+      const exp = expectedDeathAge({ reachedKing });
+      return ageYears >= exp;
+    },
+
+    // For UI/debug (optional)
+    debug(){
+      const total = tGood + tBad;
+      const goodRatio = total>0 ? (tGood/total) : 0.5;
+      return { tGood, tBad, goodRatio, GOOD_MAX_BONUS, BAD_MAX_PENALTY };
+    }
+  };
+})();
+// ========================================================
+// SECTION 13 (main.js): Problem Push Guards (no killing)
+// ========================================================
+// Goal:
+// - Problems *do not* directly kill the player.
+// - Near death (danger band), problems stop pushing entirely.
+// - Problems may block progress above midline, but cannot shove you below a floor.
+// Use these helpers inside your problem/physics code.
+
+window.ProblemGuards = (function(){
+  // Tunables
+  const MIDLINE = 50;
+  const DANGER_BAND = 12;   // when progress < 12%, problems pause (no push)
+  const PUSH_FLOOR  = 45;   // problems cannot push you below this % if you're above MIDLINE
+
+  function problemsActiveAt(progress){
+    // Pause problems in the danger band — only life drift can finish you.
+    return progress >= DANGER_BAND;
+  }
+
+  function limitPushback(prevPos, nextPos){
+    // If we started above MIDLINE and got pushed below the floor, clamp.
+    if (prevPos >= MIDLINE && nextPos < PUSH_FLOOR) return PUSH_FLOOR;
+    return nextPos;
+  }
+
+  return {
+    problemsActiveAt,
+    limitPushback,
+    constants: { MIDLINE, DANGER_BAND, PUSH_FLOOR }
+  };
+})();
+// ========================================================
+// SECTION 14 (main.js): Effort Zone Safe-Band Tuning
+// ========================================================
+// Idea:
+// - Create zones so player doesn’t always fall to death if not at exact middle.
+// - 0–10%  : Danger band — only life drift kills, problems paused.
+// - 10–40% : Effort zone — if player nudges sometimes, they can hold ground.
+// - 40–60% : Stable zone — easiest area to hover in.
+// - 60–80% : Climb zone — resistance and problems increase.
+// - 80–100%: Throne zone — very hard, eventual collapse.
+// This section adjusts drift and problem effects depending on zone.
+
+window.Zones = (function(){
+  const Z = {
+    danger: { min: 0, max: 10 },
+    effort: { min: 10, max: 40 },
+    stable: { min: 40, max: 60 },
+    climb:  { min: 60, max: 80 },
+    throne: { min: 80, max: 100 }
+  };
+
+  // Drift multipliers (relative to Difficulty baseline)
+  const DRIFT_MULTS = {
+    danger: 1.0,
+    effort: 1.0,
+    stable: 0.6,
+    climb:  1.2,
+    throne: 2.0
+  };
+
+  // Problem multipliers (affect pushback / slowdown)
+  const PROBLEM_FACTORS = {
+    danger: 0.0, // problems paused
+    effort: 0.5, // act as weight only
+    stable: 0.3,
+    climb:  1.0,
+    throne: 1.5
+  };
+
+  function zoneForPos(pos){
+    if (pos < Z.effort.min) return 'danger';
+    if (pos < Z.stable.min) return 'effort';
+    if (pos < Z.climb.min)  return 'stable';
+    if (pos < Z.throne.min) return 'climb';
+    return 'throne';
+  }
+
+  // Hooks for drift + problems
+  function driftMult(baseMult, pos){
+    const z = zoneForPos(pos);
+    return baseMult * (DRIFT_MULTS[z] ?? 1.0);
+  }
+
+  function problemFactor(pos){
+    const z = zoneForPos(pos);
+    return PROBLEM_FACTORS[z] ?? 1.0;
+  }
+
+  return { zoneForPos, driftMult, problemFactor };
+})();
+// ========================================================
+// SECTION 15 (main.js): King Buffs (easier life after crown)
+// ========================================================
+// Once you reach the King, you’ve proven yourself.
+// Problems are still there, aging still drags you down,
+// but the baseline is easier: fewer problems, slower push,
+// stronger nudges, and it’s easier to hover above the middle.
+
+(function KingBuffs(){
+  // Multipliers applied when crowned
+  const BUFFS = {
+    dragMult: 0.5,           // problems drag only half as much
+    spawnMult: 1.5,          // spawns take 1.5x longer (less frequent)
+    speedMult: 0.7,          // problem speed slowed down
+    centerBonus: 1.4,        // center magnet stronger
+    nudgeForward: 3.0        // nudges feel 3× stronger after crown
+  };
+
+  // Wrap Difficulty getters so they respect crown
+  const _getProblemDragMult = Difficulty.getProblemDragMult;
+  Difficulty.getProblemDragMult = function(){
+    const base = _getProblemDragMult();
+    return GameState.reachedKing ? base * BUFFS.dragMult : base;
+  };
+
+  const _getProblemSpawn = Difficulty.getProblemSpawn;
+  Difficulty.getProblemSpawn = function(){
+    const base = _getProblemSpawn();
+    if (!GameState.reachedKing) return base;
+    return {
+      spawnMinSec: base.spawnMinSec * BUFFS.spawnMult,
+      spawnMaxSec: base.spawnMaxSec * BUFFS.spawnMult
+    };
+  };
+
+  const _getProblemSpeedPct = Difficulty.getProblemSpeedPct;
+  Difficulty.getProblemSpeedPct = function(){
+    const base = _getProblemSpeedPct();
+    return GameState.reachedKing ? base * BUFFS.speedMult : base;
+  };
+
+  // Boost center magnet if using Tuning.center
+  if (window.Tuning && Tuning.center){
+    const originalK = Tuning.center.k;
+    Object.defineProperty(Tuning.center, "k", {
+      get(){ return GameState.reachedKing ? originalK * BUFFS.centerBonus : originalK; }
+    });
+  }
+
+  // Wrap nudgeRight so crowned players move further per tap
+  const _nudgeRight = window.nudgeRight;
+  window.nudgeRight = function(){
+    if (!running || GameState.dead) return;
+    const before = GameState.playerPos;
+    _nudgeRight(); // perform the normal nudge using current Difficulty scaling
+    if (GameState.reachedKing){
+      const gained = GameState.playerPos - before;
+      if (gained > 0){
+        // Apply king bonus on top of normal movement
+        GameState.playerPos = Math.min(TRACK_MAX, before + gained * BUFFS.nudgeForward);
+        playerBox.style.left = `${GameState.playerPos}%`;
+      }
+    }
+  };
+})();
